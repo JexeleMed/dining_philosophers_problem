@@ -36,12 +36,11 @@ int dispatch(int choice) {
 }  // namespace
 
 int main(int argc, char** argv) {
-    // Non-interactive mode: solution number as an argument.
     if (argc > 1) {
         return dispatch(std::stoi(argv[1]));
     }
 
-    // Interactive mode: menu in a loop.
+    // Menu
     int choice = -1;
     while (choice != 0) {
         print_menu();

@@ -86,8 +86,7 @@ void philosopher(int id) {
     std::mt19937 rng(std::random_device{}() + id);
 
     for (int i = 0; i < MEALS; ++i) {
-        // Philosopher 0 is a "glutton" - it barely thinks, to check
-        // whether it starves its neighbours.
+        // Philosopher 0 is a "glutton"
         if (id == 0) random_sleep(rng, 0, 5);
         else         random_sleep(rng, 10, 40);
 

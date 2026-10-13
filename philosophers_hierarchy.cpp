@@ -52,7 +52,7 @@ void philosopher(int id) {
 
         log(id, "is eating");
         random_sleep(rng);
-        // forks released automatically (RAII) in reverse order
+        // forks released automatically in reverse order
     }
     log(id, "is done (full)");
 }
