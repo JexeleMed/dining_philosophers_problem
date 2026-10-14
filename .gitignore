@@ -3,3 +3,5 @@ build/
 .idea/
 .DS_Store
 results/
+.venv/
+report/
