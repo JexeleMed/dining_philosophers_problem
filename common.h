@@ -20,14 +20,16 @@ using Clock = std::chrono::steady_clock;
 struct Config {
     int n = 5;               // number of philosophers and forks
     int time_s = 60;         // duration of a single run
-    int think_min_ms = 10;
-    int think_max_ms = 50;
-    int eat_min_ms = 10;
-    int eat_max_ms = 50;
+    int think_min_ms = 50;   // the defaults give about 100 meals per philosopher in 60 s (N = 5)
+    int think_max_ms = 300;
+    int eat_min_ms = 50;
+    int eat_max_ms = 300;
+    int glutton_think_min_ms = 0;
+    int glutton_think_max_ms = 30;
     int pause_min_ms = 0;    // deadlock demo: pause between taking the left and right fork
-    int pause_max_ms = 100;
+    int pause_max_ms = 600;
     unsigned seed = 0;       // 0 = pick a random one (it is printed and saved)
-    bool glutton = false;    // philosopher 0 thinks only 0-5 ms
+    bool glutton = false;    // philosopher 0 uses the glutton thinking time
     bool verbose = false;    // log every event
     std::string out_dir = "results";
 };
@@ -63,6 +65,7 @@ struct Summary {
     double mean_meals = 0;
     double stddev_meals = 0;
     double max_min_ratio = 0;      // 0 when somebody ate nothing
+    double spread_pct = 0;         // (max - min) / mean of meals, in percent
     double jain = 0;               // Jain's fairness index, 1.0 = perfectly equal
     double avg_wait_ms = 0;
     double max_wait_ms = 0;

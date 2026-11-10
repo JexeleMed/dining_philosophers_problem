@@ -59,7 +59,7 @@ void Experiment::log(int id, const std::string& msg) {
 void Experiment::think(int id, std::mt19937& rng) {
     log(id, "is thinking");
     auto t0 = Clock::now();
-    if (cfg_.glutton && id == 0) sleep_random_ms(rng, 0, 5);
+    if (cfg_.glutton && id == 0) sleep_random_ms(rng, cfg_.glutton_think_min_ms, cfg_.glutton_think_max_ms);
     else                         sleep_random_ms(rng, cfg_.think_min_ms, cfg_.think_max_ms);
     stats_[id].total_think_ms += to_ms(Clock::now() - t0);
 }
@@ -114,7 +114,10 @@ Summary Experiment::run(const std::function<void(int)>& philosopher,
     std::cout << "=== " << solution_ << " ===  n=" << cfg_.n << ", time=" << cfg_.time_s
               << " s, think=" << cfg_.think_min_ms << "-" << cfg_.think_max_ms
               << " ms, eat=" << cfg_.eat_min_ms << "-" << cfg_.eat_max_ms
-              << " ms, glutton=" << (cfg_.glutton ? "yes" : "no") << ", seed=" << cfg_.seed;
+              << " ms, glutton=";
+    if (cfg_.glutton) std::cout << cfg_.glutton_think_min_ms << "-" << cfg_.glutton_think_max_ms << " ms";
+    else              std::cout << "no";
+    std::cout << ", seed=" << cfg_.seed;
     if (solution_ == "deadlock")
         std::cout << ", pause=" << cfg_.pause_min_ms << "-" << cfg_.pause_max_ms << " ms";
     std::cout << std::endl;
@@ -178,6 +181,7 @@ Summary Experiment::summarize() const {
     s.mean_meals = s.total_meals / n;
     s.stddev_meals = std::sqrt(std::max(0.0, sum_sq / n - s.mean_meals * s.mean_meals));
     s.max_min_ratio = s.min_meals > 0 ? static_cast<double>(s.max_meals) / s.min_meals : 0;
+    s.spread_pct = s.mean_meals > 0 ? 100 * (s.max_meals - s.min_meals) / s.mean_meals : 0;
     s.jain = sum_sq > 0 ? static_cast<double>(s.total_meals) * s.total_meals / (n * sum_sq) : 0;
     s.avg_eating = total_eat / (s.elapsed_s * 1000);
 
@@ -198,7 +202,7 @@ void Experiment::print_report(const Summary& s) const {
     const double elapsed_ms = s.elapsed_s * 1000;
 
     std::cout << "\n" << std::fixed << std::setprecision(2)
-              << " id   meals  attempts  avg wait  min wait  max wait   pending   eat %   wait %\n"
+              << " id   meals  attempts  avg wait  min wait  max wait   pending   eat %  think %   wait %\n"
               << "                          [ms]      [ms]      [ms]      [ms]\n";
     for (int i = 0; i < cfg_.n; ++i) {
         const auto& p = stats_[i];
@@ -207,6 +211,7 @@ void Experiment::print_report(const Summary& s) const {
                   << std::setw(10) << avg << std::setw(10) << p.min_wait_ms
                   << std::setw(10) << p.max_wait_ms << std::setw(10) << p.pending_wait_ms
                   << std::setw(8) << 100 * p.total_eat_ms / elapsed_ms
+                  << std::setw(9) << 100 * p.total_think_ms / elapsed_ms
                   << std::setw(9) << 100 * (p.total_wait_ms + p.pending_wait_ms) / elapsed_ms
                   << "\n";
     }
@@ -218,6 +223,7 @@ void Experiment::print_report(const Summary& s) const {
               << "meals min/mean/max:    " << s.min_meals << " / " << s.mean_meals << " / "
               << s.max_meals << "  (stddev " << s.stddev_meals << ")\n"
               << "max/min ratio:         " << s.max_min_ratio << "\n"
+              << "meals spread:          " << s.spread_pct << " %  ((max - min) / mean)\n"
               << "Jain fairness index:   " << std::setprecision(4) << s.jain
               << std::setprecision(2) << "  (1.0 = equal, " << 1.0 / cfg_.n
               << " = one eats everything)\n"
@@ -262,7 +268,8 @@ void Experiment::save(const Summary& s) const {
         runs << "run_id,solution,n,time_s,elapsed_s,think_min_ms,think_max_ms,eat_min_ms,"
                 "eat_max_ms,pause_min_ms,pause_max_ms,glutton,seed,total_meals,throughput,min_meals,max_meals,mean_meals,"
                 "stddev_meals,max_min_ratio,jain,avg_wait_ms,p50_wait_ms,p95_wait_ms,"
-                "p99_wait_ms,max_wait_ms,max_pending_wait_ms,avg_eating,deadlock,deadlock_at_s\n";
+                "p99_wait_ms,max_wait_ms,max_pending_wait_ms,avg_eating,deadlock,deadlock_at_s,"
+                "spread_pct,glutton_think_min_ms,glutton_think_max_ms\n";
     }
     runs << std::setprecision(6) << s.run_id << "," << s.solution << "," << cfg_.n << ","
          << cfg_.time_s << "," << s.elapsed_s << "," << cfg_.think_min_ms << ","
@@ -272,7 +279,8 @@ void Experiment::save(const Summary& s) const {
          << s.stddev_meals << "," << s.max_min_ratio << "," << s.jain << "," << s.avg_wait_ms
          << "," << s.p50_wait_ms << "," << s.p95_wait_ms << "," << s.p99_wait_ms << ","
          << s.max_wait_ms << "," << s.max_pending_wait_ms << "," << s.avg_eating << ","
-         << s.deadlock << "," << s.deadlock_at_s << "\n";
+         << s.deadlock << "," << s.deadlock_at_s << "," << s.spread_pct << ","
+         << cfg_.glutton_think_min_ms << "," << cfg_.glutton_think_max_ms << "\n";
 
     std::ofstream phil(dir / (s.run_id + "_philosophers.csv"));
     phil << std::setprecision(6)
@@ -303,14 +311,16 @@ void print_comparison(const std::vector<Summary>& summaries) {
     std::cout << "\n=== Comparison ===\n" << std::fixed << std::setprecision(2)
               << std::left << std::setw(12) << "solution" << std::right
               << std::setw(8) << "meals" << std::setw(10) << "meals/s" << std::setw(6) << "min"
-              << std::setw(6) << "max" << std::setw(8) << "max/min" << std::setw(8) << "Jain"
+              << std::setw(6) << "max" << std::setw(8) << "max/min" << std::setw(10) << "spread %"
+              << std::setw(8) << "Jain"
               << std::setw(10) << "avg wait" << std::setw(10) << "p99 wait" << std::setw(10)
               << "max wait" << std::setw(8) << "eating" << "\n";
     for (const auto& s : summaries) {
         std::cout << std::left << std::setw(12) << s.solution << std::right
                   << std::setw(8) << s.total_meals << std::setw(10) << s.throughput
                   << std::setw(6) << s.min_meals << std::setw(6) << s.max_meals
-                  << std::setw(8) << s.max_min_ratio << std::setw(8) << std::setprecision(4)
+                  << std::setw(8) << s.max_min_ratio << std::setw(10) << s.spread_pct
+                  << std::setw(8) << std::setprecision(4)
                   << s.jain << std::setprecision(2) << std::setw(10) << s.avg_wait_ms
                   << std::setw(10) << s.p99_wait_ms << std::setw(10) << s.max_wait_ms
                   << std::setw(8) << s.avg_eating << "\n";

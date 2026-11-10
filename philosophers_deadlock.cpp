@@ -90,7 +90,8 @@ Summary run(const Config& cfg) {
     std::vector<std::timed_mutex> forks(cfg.n);
     std::vector<std::atomic<int>> state(cfg.n);
 
-    // Watchdog: deadlock = every philosopher holds its left fork and waits for the right one.
+    // Watchdog, called from the main thread's loop in Experiment::run.
+    // Deadlock = every philosopher holds its left fork and waits for the right one.
     std::optional<Clock::time_point> all_hold_left_since;
     auto watch = [&] {
         for (const auto& s : state) {
@@ -103,7 +104,7 @@ Summary run(const Config& cfg) {
         if (!all_hold_left_since) all_hold_left_since = now;
         if (now - *all_hold_left_since < CONFIRM) return false;
 
-        ex.mark_deadlock(*all_hold_left_since);
+        ex.mark_deadlock(*all_hold_left_since);  // when it happened, not when it was confirmed
         std::ostringstream os;
         os << "DEADLOCK detected - circular wait:";
         if (cfg.n <= 10) {
